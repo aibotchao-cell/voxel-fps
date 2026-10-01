@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#1a1712" />
+<title>VOXEL FACTORY — 廢棄工廠</title>
+<link rel="stylesheet" href="styles.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="app">
+  <!-- 3D canvas gets appended here -->
+
+  <!-- ===== HUD ===== -->
+  <div id="hud" class="hidden">
+    <div id="crosshair">
+      <span class="ch-dot"></span>
+      <span class="ch-line top"></span>
+      <span class="ch-line bottom"></span>
+      <span class="ch-line left"></span>
+      <span class="ch-line right"></span>
+    </div>
+
+    <div id="hitmarker"></div>
+    <div id="damage-vignette"></div>
+
+    <div id="topleft">
+      <div class="stat"><span id="level">1</span> <small>關卡</small></div>
+      <div class="stat diff"><span id="diff-label">普通</span> <small>敵人強度</small></div>
+      <div class="stat"><span id="kills">0</span> <small>擊殺</small></div>
+      <div class="stat"><span id="enemies-left">0</span> <small>剩餘敵人</small></div>
+      <div class="stat ally"><span id="ally-hp">100</span> <small>隊友</small></div>
+      <div class="stat money"><span id="money">0</span> <small>金錢</small></div>
+    </div>
+
+    <!-- ===== 敵人雷達 ===== -->
+    <div id="radar-wrap">
+      <canvas id="radar"></canvas>
+      <div class="radar-cap"><i class="dot red"></i>敵人<i class="dot blue"></i>隊友</div>
+    </div>
+
+    <div id="bottomleft">
+      <div id="ward" class="hidden">🛡 無敵 <b id="ward-sec">5.0</b> 秒</div>
+      <div class="hp-wrap">
+        <div id="hp-bar"></div>
+        <span id="hp-text">100</span>
+      </div>
+    </div>
+
+    <!-- BOSS 血條 -->
+    <div id="bossbar" class="hidden">
+      <div class="bb-name" id="bb-name">☠ BOSS</div>
+      <div class="bb-track"><div id="bb-fill"></div></div>
+      <div class="bb-hp" id="bb-hp">0 / 0</div>
+    </div>
+
+    <div id="bottomright">
+      <div id="weapon-name">手槍</div>
+      <div id="ammo"><span id="ammo-cur">12</span><span id="ammo-max">/12</span></div>
+    </div>
+
+    <!-- sniping scope (sniper rifle only) -->
+    <div id="scope">
+      <div class="sc-ring"></div>
+      <div class="sc-h"></div>
+      <div class="sc-v"></div>
+      <div class="sc-mil"></div>
+      <div class="sc-dot"></div>
+      <div class="sc-zoom">🔍 4×</div>
+    </div>
+
+    <div id="msg"></div>
+  </div>
+
+  <!-- ===== TOUCH CONTROLS ===== -->
+  <div id="touch" class="hidden">
+    <!-- look zone is the right half (transparent, handled in JS) -->
+    <div id="look-zone"></div>
+
+    <!-- joystick (dynamic) -->
+    <div id="joy-base" class="hidden">
+      <div id="joy-knob"></div>
+    </div>
+
+    <!-- right-side action buttons -->
+    <div id="btn-fire" class="tbtn fire">開火</div>
+    <div id="btn-aim" class="tbtn small aim hidden">🎯<small>瞄準</small></div>
+    <div id="btn-jump" class="tbtn small">跳</div>
+    <div id="btn-reload" class="tbtn small">換彈</div>
+    <div id="btn-pause" class="tbtn small">⏸<small>暫停</small></div>
+
+    <!-- weapon switch -->
+    <div id="weapons-switch">
+      <div class="wbtn" data-w="0" data-ico="🔫" data-lbl="手槍">🔫<small>手槍</small></div>
+      <div class="wbtn" data-w="1" data-ico="🔫" data-lbl="機槍">🔫<small>機槍</small></div>
+      <div class="wbtn" data-w="2" data-ico="🔪" data-lbl="小刀">🔪<small>小刀</small></div>
+      <div class="wbtn locked" data-w="3" data-ico="🔫" data-lbl="步槍">🔒<small>$150</small></div>
+      <div class="wbtn locked" data-w="4" data-ico="💥" data-lbl="霰彈">🔒<small>$170</small></div>
+      <div class="wbtn locked" data-w="5" data-ico="🎯" data-lbl="狙擊">🔒<small>$200</small></div>
+      <div class="wbtn locked" data-w="6" data-ico="🔥" data-lbl="火焰">🔒<small>$200</small></div>
+      <div class="wbtn locked" data-w="7" data-ico="❄️" data-lbl="冰榴">🔒<small>$220</small></div>
+      <div class="wbtn locked" data-w="8" data-ico="🌋" data-lbl="岩牆">🔒<small>$240</small></div>
+      <div class="wbtn locked" data-w="9" data-ico="💥" data-lbl="榴彈">🔒<small>$120</small></div>
+      <div class="wbtn locked" data-w="10" data-ico="🚀" data-lbl="火箭">🔒<small>$150</small></div>
+    </div>
+  </div>
+
+  <!-- ===== START / MENU ===== -->
+  <div id="overlay">
+    <div class="panel">
+      <h1>VOXEL <span>FACTORY</span></h1>
+      <p class="sub">廢棄工廠 · 第一人稱射擊</p>
+      <details class="howto-box">
+        <summary>📖 操作說明（點一下展開／收起）</summary>
+      <div class="howto">
+        <div><b>📱 iPad</b>：左半螢幕拖曳 = 移動搖桿 ·　右半螢幕拖曳 = 轉視角 · 右下按鈕 = 開火 / 跳 / 換彈 · 右上 = 切換武器（11 把）</div>
+        <div><b>💻 電腦</b>：WASD 移動 · 滑鼠轉視角 · 左鍵開火 · R 換彈 · 1～9、0 換武器 · 空白鍵跳 · 右鍵（或 Shift）= 狙擊鏡</div>
+        <div><b>🔍 狙擊槍放大鏡</b>：「開火」鍵左邊會多一顆 🎯 瞄準，<b>點一下開鏡 / 再點一下關鏡</b>（轉視角會自動變慢變準）</div>
+        <div><b>📡 左上雷達</b>：紅點 = 敵人（大紅點 = BOSS）· 邊邊紅三角 = 敵人在雷達範圍外 · 藍點 = 隊友 · 黃箭頭 = 敵人在上下層</div>
+        <div><b>⏸ 暫停 / 存檔</b>：螢幕下方中間的 ⏸ 按鈕（電腦按 <b>Esc</b> 或 <b>P</b>）· 進度會<b>自動存檔</b>，關掉瀏覽器下次回來可以「繼續上次進度」</div>
+      </div>
+      </details>
+      <div class="diff-wrap">
+        <div class="diff-title">敵人強度（只影響敵人變硬／變準，人數不變）</div>
+        <div id="diff-row"></div>
+        <div class="diff-desc" id="diff-desc"></div>
+      </div>
+      <button id="btn-start">開始遊戲</button>
+      <button id="btn-newgame" class="ghost hidden">🆕 新遊戲（清除存檔）</button>
+      <p class="save-line" id="save-line"></p>
+      <p class="tip">🎮 無盡關卡：場景每 5 關循環、難度一輪一輪往上疊 · 💥 補給站有<b>大範圍武器</b>（榴彈發射器 $120 / 火箭筒 $150，爆炸半徑內全體受傷）· 💀 <b>每 10 關一隻 BOSS</b>（BOSS 前那個補給站會賣超強武器：🔥火焰噴射器 / ❄️冰凍榴彈 / 🌋岩漿牆）</p>
+    </div>
+  </div>
+  <!-- ===== SHOP (every 2 levels) ===== -->
+  <div id="shop" class="hidden">
+    <div class="shop-panel">
+      <h2>🔧 補給站</h2>
+      <p class="shop-sub">每 2 關開一次 · 買槍 / 買強化再上路</p>
+      <div id="shop-boss-note" class="hidden"></div>
+      <div class="shop-money">💰 金錢：<b>$<span id="shop-money">0</span></b></div>
+      <div class="shop-scroll"><div id="shop-items"></div></div>
+      <button id="btn-shop-continue">繼續下一關 ▶</button>
+    </div>
+  </div>
+
+  <!-- ===== PAUSE ===== -->
+  <div id="pause" class="hidden">
+    <div class="shop-panel">
+      <h2>⏸ 暫停</h2>
+      <p class="shop-sub">遊戲已暫停 · 進度會自動存檔</p>
+      <div class="shop-scroll">
+        <div id="pause-info" class="pause-info"></div>
+        <button id="btn-pause-save" class="pbtn">💾 儲存進度</button>
+        <button id="btn-pause-menu" class="pbtn">🏠 回主選單（進度保留）</button>
+        <button id="btn-pause-quit" class="pbtn danger">🆕 放棄並重新開始</button>
+      </div>
+      <button id="btn-pause-resume">▶ 繼續遊戲</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
