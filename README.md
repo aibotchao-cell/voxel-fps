@@ -221,20 +221,32 @@ js/
 - 關卡尺寸：`js/world.js` → `SX / SY / SZ`
 
 ## 🌍 分享給朋友
-三種做法，差別在「網址固不固定」和「要不要開這台電腦」：
+### ✅ 目前已經上線（GitHub Pages，固定網址）
+> **https://aibotchao-cell.github.io/voxel-fps/**
+> repo：<https://github.com/aibotchao-cell/voxel-fps>（更新方式見下面「之後改了怎麼更新」）
+朋友用手機／平板／電腦開這個網址就能玩，**不用安裝、你的電腦也不用開著**；存檔存在**各人自己的瀏覽器**，進度互不干擾。
+
+### 其他做法
+差別在「網址固不固定」和「要不要開這台電腦」：
 
 | 做法 | 網址 | 需要 | 存檔 |
 |------|------|------|------|
-| **A. 部署到免費靜態空間**（推薦） | 固定（例：`xxx.netlify.app` / `xxx.pages.dev`） | 免費帳號（Netlify / Cloudflare / GitHub） | 存在**各人自己的瀏覽器**，進度互不干擾 |
+| **A. 部署到免費靜態空間**（已做＝GitHub Pages） | 固定（`aibotchao-cell.github.io/voxel-fps/`） | 免費帳號（GitHub，已授權） | 存在**各人自己的瀏覽器**，進度互不干擾 |
 | **B. cloudflared 臨時通道** | `https://隨機.trycloudflare.com`，**重開就換** | 這台電腦＋通道要一直開著 | 存在**這台電腦的 save.json** → ⚠️ 大家會**共用同一份進度** |
 | **C. 直接把 zip 傳給朋友** | 沒有 | 朋友要自己會開本機伺服器（不推薦） | 各自瀏覽器 |
 
-**做法 A 的步驟**
-1. `python share_export.py` → 產生 `../voxel-fps-share/`（1.5 MB）與 `../voxel-fps-share.zip`（約 320 KB）
-   （只會打包 index.html / styles.css / js / vendor / README，不會夾帶 cloudflared.exe 或存檔）
-2. 把資料夾或 zip 拖到 <https://app.netlify.com/drop>（不用裝任何東西），或上傳到 Cloudflare Pages / GitHub Pages
-3. 拿到固定網址就傳給朋友；朋友用手機、平板、電腦開瀏覽器就能玩，不用安裝
-4. 之後改了遊戲，再跑一次 `share_export.py` 重新上傳即可
+### 之後改了遊戲怎麼更新到網頁版
+**一鍵**：雙擊專案裡的 `deploy_github.bat`（＝重新匯出 ＋ commit ＋ push，GitHub 會在 1 分鐘內自動更新）
+
+或手動三步：
+```bash
+python share_export.py                       # 重新打包靜態檔到 ../voxel-fps-share（會保留 .git）
+cd ../voxel-fps-share && git add -A && git commit -m "update"
+git push                                     # GitHub Pages 會自動重新部署
+```
+
+**換地方部署**（想搬家時）：`python share_export.py` 產生的 `../voxel-fps-share/`（1.5 MB）與 `voxel-fps-share.zip`（約 320 KB）
+可直接拖到 <https://app.netlify.com/drop> 或 Cloudflare Pages。
 
 > 靜態空間沒有 `/api/save` 這支 API，遊戲會**自動退回存在瀏覽器 localStorage**（暫停面板會顯示「已存在瀏覽器」），
 > 所以「繼續上次進度」照樣能用，只是進度跟著那台裝置／那個人。
