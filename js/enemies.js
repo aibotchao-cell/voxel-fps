@@ -14,6 +14,7 @@ const PANTS = 0x2b2f36;
 const BOOT = 0x15171b;
 const GUNM = 0x2a2d33;
 
+// 敵人的頭＝單純的膚色方塊（v2.2 起移除照片臉：AlbertC 要求不要把真人照片放進遊戲）
 const HALF = 0.34;
 const HEIGHT = 1.9;
 
@@ -91,8 +92,8 @@ export class Enemy {
     this.flash.visible = false;
     g.add(this.flash);
 
-    // head + hair
-    mk(0.46, 0.46, 0.46, 0, 1.66, 0, SKIN);
+    // head + hair（單純的方塊頭：膚色方塊＋頭髮，沒有照片）
+    this.head = mk(0.46, 0.46, 0.46, 0, 1.66, 0, SKIN);
     mk(0.48, 0.13, 0.48, 0, 1.85, 0, HAIR);
 
     g.position.copy(this.pos);
@@ -279,13 +280,22 @@ export class EnemyManager {
     this.scene = scene;
     this.list = [];
     this.bullets = [];
+    this.fx = [];                 // BOSS 技能的場上危險物件（藤蔓／冰尖刺／衝擊波／冰牆）
     this.bulletGeo = new THREE.BoxGeometry(0.05, 0.05, 0.42);
     this.bulletMat = new THREE.MeshBasicMaterial({ color: 0xffe066 });
   }
 
+  // BOSS 丟技能時把危險物件加進來（統一在這裡更新／清除，換關不會殘留）
+  addFx(f) { this.fx.push(f); return f; }
+
+  clearFx() {
+    for (const f of this.fx) { if (f.dispose) f.dispose(); }
+    this.fx.length = 0;
+  }
+
   spawn(world, cfg, centerX, centerZ) {
     let placed = 0, guard = 0;
-    while (placed < cfg.enemies && guard < 6000) {
+    while (placed < cfg.enemies && guard < 12000) {
       guard++;
       const a = Math.random() * Math.PI * 2;
       const r = 9 + Math.random() * 15;
@@ -295,11 +305,30 @@ export class EnemyManager {
       if (Math.abs(x - centerX) < 8 && Math.abs(z - centerZ) < 8) continue;
       if (world.get(x, 0, z) === 0) continue;
       if (world.get(x, 1, z) !== 0 || world.get(x, 2, z) !== 0) continue;
+      // 程序生成的關卡：只生在「從出生點走得到」的格子，不然敵人會卡在牆後面打不到
+      if (!world.placeable(x, z)) continue;
       const e = new Enemy(world, x + 0.5, z + 0.5, new THREE.Vector3(x + 0.5, 1, z + 0.5), cfg);
       e.manager = this;
       this.scene.add(e.group);
       this.list.push(e);
       placed++;
+    }
+    // 萬一真的找不到足夠的合法位置（地形太擠），退而求其次：找任何站得住的格子
+    if (placed < cfg.enemies) {
+      let g2 = 0;
+      while (placed < cfg.enemies && g2 < 8000) {
+        g2++;
+        const x = 2 + Math.floor(Math.random() * 39);
+        const z = 2 + Math.floor(Math.random() * 39);
+        if (Math.abs(x - centerX) < 8 && Math.abs(z - centerZ) < 8) continue;
+        if (!world.standable(x, z)) continue;
+        if (this.list.some((o) => Math.abs(o.pos.x - (x + 0.5)) < 1 && Math.abs(o.pos.z - (z + 0.5)) < 1)) continue;
+        const e = new Enemy(world, x + 0.5, z + 0.5, new THREE.Vector3(x + 0.5, 1, z + 0.5), cfg);
+        e.manager = this;
+        this.scene.add(e.group);
+        this.list.push(e);
+        placed++;
+      }
     }
     return placed;
   }
@@ -370,6 +399,7 @@ export class EnemyManager {
     for (const b of this.bullets) this.scene.remove(b.mesh);
     this.list.length = 0;
     this.bullets.length = 0;
+    this.clearFx();
   }
 
   updateBullets(dt, player, onPlayerHit, ally) {
@@ -387,6 +417,12 @@ export class EnemyManager {
         b.mesh.position.copy(b.pos);
 
         if (this.worldRef && this.worldRef.isSolid(b.pos.x, b.pos.y, b.pos.z)) { dead = true; break; }
+
+        // 冰牆擋子彈（BOSS 技能）
+        for (const f of this.fx) {
+          if (f.blocksBullet && f.blocksBullet(b.pos)) { dead = true; break; }
+        }
+        if (dead) break;
 
         if (player.alive) {
           const dx = Math.abs(b.pos.x - player.pos.x);
@@ -418,6 +454,12 @@ export class EnemyManager {
 
   update(dt, player, onPlayerHit, world, ally) {
     this.worldRef = world || this.worldRef;
+    // BOSS 技能的危險物件（會打到玩家）
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      const f = this.fx[i];
+      f.update(dt, player, onPlayerHit);
+      if (f.removeMe) { if (f.dispose) f.dispose(); this.fx.splice(i, 1); }
+    }
     for (const e of this.list) e.update(dt, player, onPlayerHit, ally);
     for (let i = this.list.length - 1; i >= 0; i--) {
       if (this.list[i].removeMe) { this.scene.remove(this.list[i].group); this.list.splice(i, 1); }

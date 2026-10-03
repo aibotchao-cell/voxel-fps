@@ -1,6 +1,9 @@
-// Per-level difficulty & enemy count. Each level also uses a distinct layout + atmosphere.
-// 無盡模式：每 5 關循環一次場景，但難度會一輪一輪往上疊；每 10 關是 BOSS 關。
-export const LEVELS = [
+import { themeOf, BOSS_THEME } from './world.js';
+import { BOSS_KINDS } from './boss.js';
+
+// 難度基準表（每 5 關輪一次）。地圖本身是「每關即時生成、不重複」，
+// 這張表只決定敵人數與敵人強度的「起跑點」，再隨輪數與難度倍率往上疊。
+export const BALANCE = [
   { name: '工廠大廳', enemies: 10, health: 70,  speed: 2.0, aggro: 26, shootRange: 18, shootCd: 1.55, accuracy: 0.52, damage: 7,  bulletSpeed: 34 },
   { name: '裝配車間', enemies: 15, health: 80,  speed: 2.2, aggro: 28, shootRange: 20, shootCd: 1.45, accuracy: 0.60, damage: 8,  bulletSpeed: 36 },
   { name: '鍋爐房',   enemies: 21, health: 90,  speed: 2.4, aggro: 30, shootRange: 22, shootCd: 1.35, accuracy: 0.66, damage: 8,  bulletSpeed: 38 },
@@ -9,7 +12,10 @@ export const LEVELS = [
 ];
 
 export const BOSS_EVERY = 10;   // 第 10、20、30… 關是 BOSS 關
-export const BOSS_NAMES = ['鋼鐵廠長', '熔爐巨獸', '鐵衛團長', '最終兵器'];
+// BOSS 屬性輪替：第 10 關鋼鐵 → 第 20 關叢林 → 第 30 關冰 → 第 40 關之後「最終兵器」（全部技能）
+export const BOSS_ORDER = ['steel', 'jungle', 'ice', 'final'];
+export const BOSS_NAMES = BOSS_ORDER.map((k) => BOSS_KINDS[k].name);
+export const BOSS_TITLES = ['魔法城堡', '水晶城堡', '夢幻城堡', '星光城堡'];   // BOSS 關的關卡名（迪士尼風格）
 
 // 敵人強度（主選單可選）：只動「每隻敵人的數值」，人數完全不變
 //   hp 血量倍率 · dmg 傷害倍率 · acc 準度加減 · rate 開火間隔倍率(越小越快)
@@ -36,10 +42,11 @@ export function setDifficulty(i) {
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 const roundTag = (n) => (n <= ROMAN.length ? ROMAN[n - 1] : `R${n}`);
 
-export const cycleOf = (i) => Math.floor(i / LEVELS.length);          // 第幾輪（0 起算）
+export const cycleOf = (i) => Math.floor(i / BALANCE.length);         // 第幾輪（0 起算）
 export const isBossLevel = (i) => (i + 1) % BOSS_EVERY === 0;
 export const bossTier = (i) => Math.floor(i / BOSS_EVERY);            // 第幾隻 BOSS（0 起算）
-export const layoutIndex = (i) => i % LEVELS.length;                 // 用哪個場景
+// 每關的地圖主題（地圖由 world.js 用關卡序號即時生成，不會重複）
+export const themeFor = (i) => (isBossLevel(i) ? BOSS_THEME : themeOf(i));
 
 // 清關獎金：BOSS 關給大包，其餘每輪加一點（再乘上難度倍率）
 export function rewardFor(i) {
@@ -49,17 +56,22 @@ export function rewardFor(i) {
 
 // 依關卡序號產生難度設定（0 起算）
 export function levelConfig(i) {
-  const base = LEVELS[layoutIndex(i)];
+  const base = BALANCE[i % BALANCE.length];
   const c = cycleOf(i);
   const boss = isBossLevel(i);
   const tier = bossTier(i);
   const d = DIFFICULTIES[diffIndex];
+  const theme = themeFor(i);
+  const word = theme.words[(i * 5 + 1) % theme.words.length];
 
   const cfg = {
     ...base,
     index: i,
     boss,
-    name: boss ? BOSS_NAMES[tier % BOSS_NAMES.length] : `${base.name} ${roundTag(c + 1)}`,
+    theme: theme.name,
+    // 關卡名＝主題名稱（每關不同主題，所以名字也會換）
+    name: boss ? `${BOSS_TITLES[tier % BOSS_TITLES.length]} · ${BOSS_NAMES[tier % BOSS_NAMES.length]}`
+               : `${word} ${roundTag(c + 1)}`,
     // 敵人數量：一開始多少就一直是多少（後面的關卡只變硬、不變多）
     // BOSS 關只留少量小兵（3～6 隻），才不會被小兵淹沒
     enemies: boss ? 3 + Math.min(3, c) : base.enemies,
@@ -75,7 +87,17 @@ export function levelConfig(i) {
     bossHealth: boss ? Math.round((10000 + 2500 * tier) * d.bossHp) : 0,   // 第 10 關 10000 起（再乘難度）
     bossSpeed: 1.85,
     bossChargeMul: 2.8,                                  // 暴衝速度倍率（1.85 × 2.8 ≈ 5.2，比沒升級的玩家快一點）
-    bossDamage: Math.round(40 * d.bossDmg),              // 每發子彈打到玩家 −40 血（簡單 22 / 困難 52 / 地獄 64）
+    // 攻擊力提高：第 10 關 46 起，每 10 關 +6（最高 64），再乘難度倍率
+    bossDamage: Math.round((46 + 6 * Math.min(3, tier)) * d.bossDmg),
+    // BOSS 屬性與技能傷害（叢林藤蔓／荊棘、冰尖刺／冰霜新星…）
+    bossKind: BOSS_ORDER[tier % BOSS_ORDER.length],
+    bossTier: tier,
+    bossSlamDamage: Math.round((26 + 4 * Math.min(4, tier)) * d.bossDmg),
+    bossVineDamage: Math.round((30 + 4 * Math.min(4, tier)) * d.bossDmg),
+    bossVineDps: Math.round((13 + 2 * Math.min(4, tier)) * d.bossDmg),
+    bossThornDamage: Math.round((14 + 2 * Math.min(4, tier)) * d.bossDmg),
+    bossSpikeDamage: Math.round((14 + 2 * Math.min(4, tier)) * d.bossDmg),
+    bossFrostDamage: Math.round((22 + 3 * Math.min(4, tier)) * d.bossDmg),
     bossCd: Math.max(0.68, 1.22 - 0.09 * tier),          // 開火間隔縮短（原本 1.25 起）
     bossBurst: 4 + Math.min(2, tier),                    // 一次幾連發：4 → 最多 6
     bossAccuracy: Math.min(0.94, +(0.86 + 0.02 * tier).toFixed(2)),

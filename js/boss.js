@@ -1,4 +1,23 @@
 import * as THREE from 'three';
+import { VinePatch, IceSpikes, NovaRing, IceWall } from './bossfx.js';
+
+// ---------------------------------------------------------------------------
+// BOSS 屬性（每 10 關換一種，能力一種比一種多）：
+//   steel  鋼鐵廠長：震地衝擊波
+//   jungle 叢林霸主：種藤蔓（會炸裂）＋荊棘爆發＋震地
+//   ice    寒冰領主：冰尖刺＋冰霜新星（減速）＋冰牆（擋子彈）
+//   final  最終兵器：全部技能通通會
+// 每隻 BOSS 都保留原本的：連發機砲、暴衝、召喚小兵
+// ---------------------------------------------------------------------------
+export const BOSS_KINDS = {
+  steel:  { name: '鋼鐵廠長', tint: 0xff4422, core: [0.75, 0.20, 0.00], abilities: ['slam'] },
+  jungle: { name: '叢林霸主', tint: 0x7bff5a, core: [0.25, 0.80, 0.18], abilities: ['vines', 'thornBurst', 'slam'] },
+  ice:    { name: '寒冰領主', tint: 0x7fd8ff, core: [0.35, 0.72, 1.00], abilities: ['iceSpikes', 'frostNova', 'iceWall'] },
+  final:  { name: '最終兵器', tint: 0xd08aff, core: [0.72, 0.35, 1.00], abilities: ['slam', 'vines', 'thornBurst', 'iceSpikes', 'frostNova', 'iceWall'] },
+};
+
+// 各技能的冷卻（秒）；越後面的關卡會再乘上 0.62~1 的倍率
+const AB_CD = { slam: 9.5, vines: 8.5, thornBurst: 12, iceSpikes: 7, frostNova: 13, iceWall: 15 };
 
 // ---------------------------------------------------------------------------
 // BOSS：每 10 關出現一次的巨型機甲。介面刻意跟 Enemy 一樣
@@ -55,6 +74,12 @@ export class Boss {
     this.glows = [];        // 發光零件（不受受擊閃光影響）
     this.maxSummons = 6;    // 每隻 BOSS 最多召喚 6 隻小兵（後面的關卡不會越叫越多）
     this.summoned = 0;
+    // ---- 屬性技能 ----
+    this.kind = BOSS_KINDS[cfg.bossKind] || BOSS_KINDS.steel;
+    this.tier = cfg.bossTier || 0;
+    this.castLock = 0;
+    this.abT = {};
+    for (const k of Object.keys(AB_CD)) this.abT[k] = 4 + Math.random() * 4;   // 開場錯開，不會一次全丟
     this.group = this.build();
   }
 
@@ -200,6 +225,72 @@ export class Boss {
     if (axis === 'x') this.vel.x = 0; else this.vel.z = 0;
   }
 
+  // ---- 屬性技能實作 ----
+  castAbility(key, target, dist) {
+    const m = this.manager;
+    if (!m) return false;
+    const cfg = this.cfg;
+    const sc = m.scene;
+    switch (key) {
+      case 'slam': {
+        // 震地衝擊波：以 BOSS 為中心的環狀衝擊（近距離才放）
+        if (dist > 13) return false;
+        m.addFx(new NovaRing(sc, this.pos.x, this.pos.y, this.pos.z, {
+          maxR: 9.5, speed: 15, damage: cfg.bossSlamDamage || 26, knock: 6, color: this.kind.tint,
+        }));
+        if (m.onBossCast) m.onBossCast('⚠ 震地衝擊波！');
+        return true;
+      }
+      case 'vines': {
+        // 叢林：在玩家腳下種一片藤蔓，站上去會持續受傷，時間到炸裂
+        if (dist > 32) return false;
+        m.addFx(new VinePatch(sc, target.pos.x, target.pos.y, target.pos.z, {
+          radius: 3.6, dps: cfg.bossVineDps || 18, burst: cfg.bossVineDamage || 36, life: 2.8,
+        }));
+        if (m.onBossCast) m.onBossCast('🌿 叢林藤蔓在地面蔓延…（快離開！）');
+        return true;
+      }
+      case 'thornBurst': {
+        // 荊棘爆發：一圈荊棘子彈往四面八方射
+        const n = 9;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + Math.random() * 0.25;
+          const fake = { pos: { x: this.pos.x + Math.sin(a) * 24, y: this.pos.y + 1.0, z: this.pos.z + Math.cos(a) * 24 }, alive: true };
+          m.spawnBullet(this, fake, { accuracy: 0.92, bulletSpeed: 27, damage: cfg.bossThornDamage || 16 });
+        }
+        if (m.onBossCast) m.onBossCast('🌿 荊棘爆發！');
+        return true;
+      }
+      case 'iceSpikes': {
+        // 冰尖刺：朝玩家方向冒出一排冰刺（命中受傷＋減速）
+        if (dist > 28) return false;
+        m.addFx(new IceSpikes(sc, this.pos.x, this.pos.y, this.pos.z, target.pos.x - this.pos.x, target.pos.z - this.pos.z, {
+          count: 4 + Math.min(3, this.tier), damage: cfg.bossSpikeDamage || 20, life: 3.8,
+        }));
+        if (m.onBossCast) m.onBossCast('❄ 冰尖刺從地面竄出！');
+        return true;
+      }
+      case 'frostNova': {
+        // 冰霜新星：一圈會減速的冰環
+        m.addFx(new NovaRing(sc, this.pos.x, this.pos.y, this.pos.z, {
+          maxR: 11, speed: 11, damage: cfg.bossFrostDamage || 22, slowMul: 0.45, slowSec: 2.8, color: 0x9fe8ff,
+        }));
+        if (m.onBossCast) m.onBossCast('❄ 冰霜新星！被掃到會變慢');
+        return true;
+      }
+      case 'iceWall': {
+        // 冰牆：召喚一道擋子彈的冰牆（可以拿來當掩護，也會擋住你的子彈）
+        if (dist < 3.5) return false;
+        m.addFx(new IceWall(sc, this.pos.x, this.pos.y, this.pos.z, target.pos.x - this.pos.x, target.pos.z - this.pos.z, {
+          width: 7 + Math.min(3, this.tier), height: 3, life: 9,
+        }));
+        if (m.onBossCast) m.onBossCast('🧊 召喚冰牆！會擋子彈');
+        return true;
+      }
+    }
+    return false;
+  }
+
   update(dt, player, onPlayerHit, ally) {
     const cfg = this.cfg;
 
@@ -314,6 +405,21 @@ export class Boss {
       }
     }
 
+    // --- 屬性技能（每隻 BOSS 依屬性有不同的技能組合）---
+    this.castLock = Math.max(0, this.castLock - dt);
+    const cdm = Math.max(0.62, 1 - 0.06 * this.tier);
+    for (const key of this.kind.abilities) {
+      this.abT[key] -= dt;
+      if (this.abT[key] > 0) continue;
+      if (!seen || this.castLock > 0) break;                 // 沒看到玩家就先憋著
+      if (this.castAbility(key, target, dist)) {
+        this.abT[key] = AB_CD[key] * cdm;
+        this.castLock = 1.2;
+      } else {
+        this.abT[key] = 1.5;                                 // 條件不符（太遠…），1.5 秒後再試
+      }
+    }
+
     const dl = Math.hypot(dirX, dirZ);
     const spd = this.state === 'charge' ? cfg.bossSpeed * (cfg.bossChargeMul || 2.9) : cfg.bossSpeed;
     if (dl > 0.001) { this.vel.x = (dirX / dl) * spd; this.vel.z = (dirZ / dl) * spd; }
@@ -336,10 +442,11 @@ export class Boss {
     const now = performance.now();
     const pulse = 0.85 + Math.sin(now * 0.006) * 0.15;
     this.core.scale.setScalar(pulse);
-    this.core.material.emissive.setRGB(0.75 * pulse, 0.20 * pulse, 0);
-    const blink = Math.sin(now * 0.005) > -0.2 ? 0xff2a1a : 0x551008;   // 呼吸式閃爍的肩燈
+    const cc = this.kind.core;
+    this.core.material.emissive.setRGB(cc[0] * pulse, cc[1] * pulse, cc[2] * pulse);
+    const blink = Math.sin(now * 0.005) > -0.2 ? this.kind.tint : 0x201014;   // 呼吸式閃爍的肩燈（依屬性換色）
     for (const gmesh of this.glowList) gmesh.material.emissive.setHex(blink);
-    this.visor.material.emissive.setHex(this.freeze > 0 ? 0x4488ff : (this.summonFlash > 0 ? 0x66aaff : 0xff4422));
+    this.visor.material.emissive.setHex(this.freeze > 0 ? 0x4488ff : (this.summonFlash > 0 ? 0x66aaff : this.kind.tint));
 
     this.group.rotation.y = this.yaw;
     this.group.rotation.z = 0;

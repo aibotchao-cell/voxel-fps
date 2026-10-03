@@ -23,6 +23,8 @@ export class Player {
     this.bob = 0;
     this.moveX = 0; this.moveZ = 0;
     this.speed = SPEED; // upgradable at the shop
+    this.slowT = 0;      // 減速剩餘秒數（冰系 BOSS 的冰霜效果）
+    this.slowMul = 1;    // 減速倍率（0.5 = 半速）
   }
 
   collides(x, y, z) {
@@ -40,6 +42,7 @@ export class Player {
   update(dt, input) {
     if (!this.alive) return;
     if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
+    if (this.slowT > 0) this.slowT = Math.max(0, this.slowT - dt);   // 被冰系 BOSS 減速
 
     // camera-relative basis (three.js: forward is -Z, rotated by yaw)
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
@@ -51,8 +54,9 @@ export class Player {
     this.moveX = mx; this.moveZ = mz;
 
     const ctrl = this.grounded ? 1 : AIR_CONTROL;
-    this.vel.x = mx * this.speed * ctrl;
-    this.vel.z = mz * this.speed * ctrl;
+    const slowK = this.slowT > 0 ? this.slowMul : 1;
+    this.vel.x = mx * this.speed * ctrl * slowK;
+    this.vel.z = mz * this.speed * ctrl * slowK;
 
     this.vel.y += GRAVITY * dt;
     if (this.vel.y < -45) this.vel.y = -45;

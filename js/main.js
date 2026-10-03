@@ -4,10 +4,11 @@ import { Player } from './player.js';
 import { WeaponManager, WEAPONS } from './weapons.js';
 import { EnemyManager } from './enemies.js';
 import { Controls } from './controls.js';
-import { LEVELS, levelConfig, isBossLevel, rewardFor, layoutIndex, DIFFICULTIES, difficulty, difficultyIndex, setDifficulty } from './levels.js';
+import { levelConfig, isBossLevel, rewardFor, themeFor, DIFFICULTIES, difficulty, difficultyIndex, setDifficulty } from './levels.js';
 import { Ally } from './ally.js';
 import { Radar } from './radar.js';
 import { Boss } from './boss.js';
+import { VERSION } from './version.js';
 
 // ------------------------------ DOM --------------------------------------
 const app = document.getElementById('app');
@@ -51,16 +52,8 @@ const sun = new THREE.DirectionalLight(0xfff0d0, 0.9);
 sun.position.set(0.4, 1, 0.35);
 scene.add(sun);
 
-// per-level atmosphere (sky / fog / light) — a distinct mood for each level
-const ATMOS = [
-  { sky: 0x9a8a72, fog: 0x8f8068, near: 26, far: 78, amb: 0.78, ambC: 0xffffff, sunC: 0xfff0d0, sunI: 0.90 },
-  { sky: 0x87939c, fog: 0x7e8a93, near: 22, far: 64, amb: 0.72, ambC: 0xeaf2ff, sunC: 0xdfeaff, sunI: 0.85 },
-  { sky: 0x6b4038, fog: 0x5c3832, near: 10, far: 42, amb: 0.52, ambC: 0xffd8b0, sunC: 0xffa860, sunI: 0.60 },
-  { sky: 0x8d8778, fog: 0x807a6c, near: 18, far: 58, amb: 0.74, ambC: 0xfaeed2, sunC: 0xf6e8c8, sunI: 0.85 },
-  { sky: 0x3c4a5e, fog: 0x35404f, near: 20, far: 68, amb: 0.58, ambC: 0xc8dcff, sunC: 0xbcd4ff, sunI: 0.70 },
-];
-// BOSS 關專用氣氛：血紅、霧很近，壓迫感
-const BOSS_ATMOS = { sky: 0x3a1010, fog: 0x2a0c0c, near: 14, far: 58, amb: 0.76, ambC: 0xffc0b0, sunC: 0xff7a54, sunI: 0.95 };
+// 天空／霧／燈光改成跟著「關卡主題」走（見 world.js 的 THEMES / BOSS_THEME），
+// 每個主題有自己的氣氛，所以每一關看起來都不一樣。
 
 // ----------------------------- world -------------------------------------
 const spawnX = Math.floor(SX / 2) + 0.5;
@@ -82,6 +75,7 @@ const radar = new Radar(el('radar'));
 
 // BOSS 召喚小兵時提示一下
 enemyMgr.onSummon = (n) => showMsg(`☠ BOSS 召喚了 ${n} 隻增援！`, 1.8);
+enemyMgr.onBossCast = (msg) => showMsg(msg, 1.6);          // BOSS 放技能時的提示
 
 window.__game = {
   player, enemyMgr, weapons, ally, controls, camera, scene, renderer, radar,
@@ -241,12 +235,12 @@ function loadLevel(i) {
   levelMesh.geometry.dispose();
   levelMesh.material.dispose();
   world = new World();
-  buildLevel(world, layoutIndex(levelIndex));   // 場景每 5 關循環一次
+  buildLevel(world, levelIndex, cfg.boss);      // 每一關即時生成、不重複（BOSS 關＝魔法城堡）
   levelMesh = buildMesh(world);
   scene.add(levelMesh);
 
   // apply this level's atmosphere (BOSS 關用血紅氣氛)
-  const at = cfg.boss ? BOSS_ATMOS : ATMOS[layoutIndex(levelIndex) % ATMOS.length];
+  const at = themeFor(levelIndex).atmos;        // 每個主題有自己的天空／霧／燈光
   scene.background = new THREE.Color(at.sky);
   scene.fog.color.setHex(at.fog);
   scene.fog.near = at.near;
@@ -699,6 +693,7 @@ function renderPauseInfo(note) {
     `進度：第 <b>${levelIndex + 1}</b> 關${cfg.boss ? '（BOSS）' : ` · ${cfg.name}`}<br>` +
     `敵人強度：<b>${difficulty().name}</b>（回主選單可以換）<br>` +
     `金錢：<b>$${money}</b> · 擊殺：<b>${kills}</b> · 買過的槍：<b>${owned}/${all}</b><br>` +
+    `版本：<b>v${VERSION}</b><br>` +
     `<span class="saved">${note || (lastSavedAt ? '✅ 已自動存檔 ' + fmtTime(lastSavedAt) : '進度會自動儲存')}</span>`;
 }
 
@@ -928,5 +923,6 @@ window.addEventListener('orientationchange', () => {
 });
 
 // 開場：建立「敵人強度」按鈕，再看有沒有存檔（有的話主按鈕變成「▶ 繼續上次進度」）
+el('ver-line').textContent = 'v' + VERSION;
 buildDifficultyUI();
 refreshStartMenu();
